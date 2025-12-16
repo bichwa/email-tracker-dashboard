@@ -1,101 +1,127 @@
 body {
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
-  background: #f6f8fb;
   margin: 0;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  background-color: #F4F6F8;
+  color: #0B2C48;
 }
 
 .container {
+  max-width: 1200px;
+  margin: auto;
   padding: 24px;
-}
-
-.loading {
-  padding: 24px;
-  font-size: 16px;
 }
 
 h1 {
+  color: #0B2C48;
   margin-bottom: 24px;
 }
 
 h2 {
+  color: #0B2C48;
   margin-bottom: 12px;
 }
 
-section {
-  margin-bottom: 32px;
-}
-
-input[type="date"] {
-  margin-right: 12px;
-  padding: 6px;
-}
-
+/* KPI cards */
 .kpi-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 16px;
+  margin-bottom: 32px;
 }
 
 .kpi-card {
   background: white;
-  border-radius: 8px;
-  padding: 16px;
-  box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+  border-radius: 10px;
+  padding: 18px;
+  border-left: 6px solid #E30613;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
 }
 
 .kpi-card h3 {
   margin: 0;
-  font-size: 14px;
-  color: #666;
+  font-size: 13px;
+  color: #6B7280;
 }
 
 .kpi-card p {
-  margin-top: 8px;
-  font-size: 26px;
+  margin-top: 10px;
+  font-size: 28px;
   font-weight: bold;
+  color: #0B2C48;
 }
 
-.table-actions {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
+/* Filters */
+input[type="date"] {
+  padding: 6px 10px;
+  margin-right: 12px;
+  border-radius: 6px;
+  border: 1px solid #E5E7EB;
 }
 
+/* Tables */
 table {
   width: 100%;
   border-collapse: collapse;
   background: white;
+  border-radius: 10px;
+  overflow: hidden;
 }
 
-th {
-  background: #eef2f7;
+thead {
+  background-color: #0B2C48;
+  color: white;
 }
 
 th, td {
-  padding: 10px;
-  border-bottom: 1px solid #ddd;
+  padding: 12px;
+  border-bottom: 1px solid #E5E7EB;
+  text-align: left;
+}
+
+tbody tr:hover {
+  background-color: #F9FAFB;
+}
+
+/* Buttons */
+button {
+  background-color: #E30613;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  padding: 8px 14px;
+  cursor: pointer;
+  font-weight: 500;
+}
+
+button:hover {
+  opacity: 0.9;
 }
 
 .link-button {
   background: none;
   border: none;
-  color: #4f46e5;
+  color: #E30613;
   cursor: pointer;
   padding: 0;
+  font-weight: 500;
 }
 
 .link-button:hover {
   text-decoration: underline;
 }
 
-button {
-  padding: 6px 12px;
-  border-radius: 6px;
-  border: 1px solid #ccc;
-  cursor: pointer;
-  background: white;
+/* Status helpers */
+.text-received {
+  color: #0B2C48;
+  font-weight: 500;
 }
 
-button:hover {
-  background: #f0f0f0;
+.text-responded {
+  color: #2E7D32;
+  font-weight: 600;
+}
+
+.text-breach {
+  color: #E30613;
+  font-weight: 700;
 }

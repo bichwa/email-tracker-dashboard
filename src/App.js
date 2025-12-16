@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
-import { supabase } from './supabase';
-import './App.css';
+import { useEffect, useState } from "react";
+import { supabase } from "./supabase";
+import "./App.css";
 
 import {
   LineChart,
@@ -11,37 +11,67 @@ import {
   ResponsiveContainer,
   BarChart,
   Bar,
-  Legend
-} from 'recharts';
+  Legend,
+} from "recharts";
 
 function App() {
+  // ---------------------------
+  // State
+  // ---------------------------
   const [metrics, setMetrics] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
+  const [unrespondedEmails, setUnrespondedEmails] = useState([]);
+  const [loadingUnresponded, setLoadingUnresponded] = useState(true);
+
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
   const [selectedEmployee, setSelectedEmployee] = useState(null);
 
+  // ---------------------------
+  // Effects
+  // ---------------------------
   useEffect(() => {
-    async function loadData() {
+    async function loadMetrics() {
       const { data } = await supabase
-        .from('daily_metrics')
-        .select('*')
-        .order('date', { ascending: false });
+        .from("daily_metrics")
+        .select("*")
+        .order("date", { ascending: false });
 
       setMetrics(data || []);
       setLoading(false);
     }
 
-    loadData();
+    loadMetrics();
   }, []);
 
+  useEffect(() => {
+    fetch("https://email-tracker-vercel.vercel.app/api/unresponded", {
+      headers: {
+        Authorization: "Bearer solvit_tracker_2024_secure_key_xyz789",
+      },
+    })
+      .then((res) => res.json())
+      .then((data) => {
+        setUnrespondedEmails(data.items || []);
+        setLoadingUnresponded(false);
+      })
+      .catch(() => {
+        setLoadingUnresponded(false);
+      });
+  }, []);
+
+  // ---------------------------
+  // Early loading state
+  // ---------------------------
   if (loading) {
     return <p className="loading">Loading dashboard…</p>;
   }
 
-  // Enrich with SLA %
-  const enrichedMetrics = metrics.map(row => {
+  // ---------------------------
+  // Enrich metrics with SLA %
+  // ---------------------------
+  const enrichedMetrics = metrics.map((row) => {
     const responded = row.total_emails_responded || 0;
     const breaches = row.sla_breaches || 0;
 
@@ -53,14 +83,18 @@ function App() {
     return { ...row, slaPercent };
   });
 
+  // ---------------------------
   // Date filter
-  const filteredMetrics = enrichedMetrics.filter(row => {
+  // ---------------------------
+  const filteredMetrics = enrichedMetrics.filter((row) => {
     if (startDate && row.date < startDate) return false;
     if (endDate && row.date > endDate) return false;
     return true;
   });
 
-  // KPIs
+  // ---------------------------
+  // KPI calculations
+  // ---------------------------
   const totalReceived = filteredMetrics.reduce(
     (sum, r) => sum + (r.total_emails_received || 0),
     0
@@ -79,14 +113,14 @@ function App() {
   const overallSlaPercent =
     totalResponded > 0
       ? Math.round(((totalResponded - totalBreaches) / totalResponded) * 100)
-      : '—';
+      : "—";
 
   const avgResponseOverall = (() => {
     const valid = filteredMetrics
-      .map(r => r.avg_response_time_minutes)
-      .filter(v => v !== null);
+      .map((r) => r.avg_response_time_minutes)
+      .filter((v) => v !== null);
 
-    if (valid.length === 0) return '—';
+    if (valid.length === 0) return "—";
 
     return (
       Math.round(
@@ -95,32 +129,37 @@ function App() {
     );
   })();
 
+  // ---------------------------
   // CSV export
+  // ---------------------------
   function exportToCSV(rows) {
     if (!rows.length) return;
 
     const headers = Object.keys(rows[0]);
     const csv = [
-      headers.join(','),
-      ...rows.map(row =>
-        headers.map(h => `"${row[h] ?? ''}"`).join(',')
-      )
-    ].join('\n');
+      headers.join(","),
+      ...rows.map((row) =>
+        headers.map((h) => `"${row[h] ?? ""}"`).join(",")
+      ),
+    ].join("\n");
 
-    const blob = new Blob([csv], { type: 'text/csv' });
+    const blob = new Blob([csv], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
 
-    const a = document.createElement('a');
+    const a = document.createElement("a");
     a.href = url;
-    a.download = 'email_metrics.csv';
+    a.download = "email_metrics.csv";
     a.click();
 
     URL.revokeObjectURL(url);
   }
 
+  // ---------------------------
+  // Render
+  // ---------------------------
   return (
     <div className="container">
-      <h1>Email Response Dashboard</h1>
+      <h1>Solvit Email Response Dashboard</h1>
 
       {/* KPI Cards */}
       <section className="kpi-grid">
@@ -151,12 +190,12 @@ function App() {
         <input
           type="date"
           value={startDate}
-          onChange={e => setStartDate(e.target.value)}
+          onChange={(e) => setStartDate(e.target.value)}
         />
         <input
           type="date"
           value={endDate}
-          onChange={e => setEndDate(e.target.value)}
+          onChange={(e) => setEndDate(e.target.value)}
         />
       </section>
 
@@ -171,8 +210,10 @@ function App() {
             <Legend />
             <Line
               type="monotone"
-              dataKey="avg_response_time_minutes"
-              name="Avg Response (min)"
+  dataKey="avg_response_time_minutes"
+  name="Avg Response (min)"
+  stroke="#E30613"
+  strokeWidth={2}
             />
           </LineChart>
         </ResponsiveContainer>
@@ -186,8 +227,8 @@ function App() {
             <YAxis />
             <Tooltip />
             <Legend />
-            <Bar dataKey="total_emails_received" name="Received" />
-            <Bar dataKey="total_emails_responded" name="Responded" />
+            <Bar dataKey="total_emails_received" name="Received" fill="#0B2C48" />
+            <Bar dataKey="total_emails_responded" name="Responded" fill="#2E7D32"/>
           </BarChart>
         </ResponsiveContainer>
       </section>
@@ -197,48 +238,37 @@ function App() {
         <h2>Top Responders</h2>
         <ul>
           {[...filteredMetrics]
-            .filter(r => r.avg_response_time_minutes !== null)
-            .sort((a, b) => a.avg_response_time_minutes - b.avg_response_time_minutes)
+            .filter((r) => r.avg_response_time_minutes !== null)
+            .sort(
+              (a, b) =>
+                a.avg_response_time_minutes - b.avg_response_time_minutes
+            )
             .slice(0, 5)
-            .map(r => (
+            .map((r) => (
               <li key={r.employee_email}>
                 {r.employee_email} — {r.avg_response_time_minutes} min
               </li>
             ))}
         </ul>
-
-        <h2>Best SLA Compliance</h2>
-        <ul>
-          {[...filteredMetrics]
-            .filter(r => r.slaPercent !== null)
-            .sort((a, b) => b.slaPercent - a.slaPercent)
-            .slice(0, 5)
-            .map(r => (
-              <li key={r.employee_email}>
-                {r.employee_email} — {r.slaPercent}%
-              </li>
-            ))}
-        </ul>
       </section>
 
-      {/* Drill-down */}
-      {selectedEmployee && (
-        <section>
-          <h2>Employee Detail: {selectedEmployee}</h2>
-          <button onClick={() => setSelectedEmployee(null)}>← Back</button>
+      {/* Unresponded emails */}
+      <section>
+        <h2 style={{ color: "#E30613" }}>
+  🔴 Unresponded Emails (SLA &gt; 15 minutes)
+</h2>
+        {loadingUnresponded ? (
+          <p>Loading…</p>
+        ) : (
           <ul>
-            {filteredMetrics
-              .filter(r => r.employee_email === selectedEmployee)
-              .map(r => (
-                <li key={r.date}>
-                  {r.date} — Avg:{' '}
-                  {r.avg_response_time_minutes ?? '—'} min, SLA breaches:{' '}
-                  {r.sla_breaches}
-                </li>
-              ))}
+            {unrespondedEmails.slice(0, 20).map((e) => (
+              <li key={e.id}>
+                <strong className="text-breach">{e.subject}</strong> — {e.from_email}
+              </li>
+            ))}
           </ul>
-        </section>
-      )}
+        )}
+      </section>
 
       {/* Table */}
       <section>
@@ -262,22 +292,15 @@ function App() {
             </tr>
           </thead>
           <tbody>
-            {filteredMetrics.map(row => (
+            {filteredMetrics.map((row) => (
               <tr key={`${row.employee_email}-${row.date}`}>
                 <td>{row.date}</td>
-                <td>
-                  <button
-                    className="link-button"
-                    onClick={() => setSelectedEmployee(row.employee_email)}
-                  >
-                    {row.employee_email}
-                  </button>
-                </td>
+                <td>{row.employee_email}</td>
                 <td>{row.total_emails_received}</td>
                 <td>{row.total_emails_responded}</td>
-                <td>{row.avg_response_time_minutes ?? '—'}</td>
+                <td>{row.avg_response_time_minutes ?? "—"}</td>
                 <td>{row.sla_breaches}</td>
-                <td>{row.slaPercent ?? '—'}%</td>
+                <td>{row.slaPercent ?? "—"}%</td>
               </tr>
             ))}
           </tbody>
