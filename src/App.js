@@ -183,6 +183,21 @@ function App() {
           <p>{avgResponseOverall} min</p>
         </div>
       </section>
+      <section className="sla-legend">
+  <h3>How to read this dashboard</h3>
+  <ul>
+    <li>
+      <strong>Avg Response:</strong> Average minutes taken to send the first reply.
+    </li>
+    <li>
+      <strong>SLA Breach:</strong> Response sent after the SLA target time.
+    </li>
+    <li>
+      <strong>SLA %:</strong> Percentage of responses sent within SLA time.
+    </li>
+  </ul>
+</section>
+
 
       {/* Filters */}
       <section>
@@ -227,8 +242,8 @@ function App() {
             <YAxis />
             <Tooltip />
             <Legend />
-            <Bar dataKey="total_emails_received" name="Received" fill="#0B2C48" />
-            <Bar dataKey="total_emails_responded" name="Responded" fill="#2E7D32"/>
+            <Bar dataKey="total_emails_received" name="Received" fill="#0A2540" />
+            <Bar dataKey="total_emails_responded" name="Responded" fill="#E11D2E"/>
           </BarChart>
         </ResponsiveContainer>
       </section>
@@ -255,8 +270,7 @@ function App() {
       {/* Unresponded emails */}
       <section>
         <h2 style={{ color: "#E30613" }}>
-  🔴 Unresponded Emails (SLA &gt; 15 minutes)
-</h2>
+  🔴 Unresponded Emails (SLA &gt; 15 minutes)</h2>
         {loadingUnresponded ? (
           <p>Loading…</p>
         ) : (
@@ -269,6 +283,37 @@ function App() {
           </ul>
         )}
       </section>
+      <section>
+  <h3>Unresponded Emails</h3>
+
+  {loadingUnresponded ? (
+    <p>Loading unresponded emails…</p>
+  ) : unrespondedEmails.length === 0 ? (
+    <p>All emails responded to 🎉</p>
+  ) : (
+    <table>
+      <thead>
+        <tr>
+          <th>Subject</th>
+          <th>From</th>
+          <th>Age</th>
+        </tr>
+      </thead>
+      <tbody>
+        {unrespondedEmails.map(email => (
+          <tr key={email.id}>
+            <td>{email.subject}</td>
+            <td>{email.from_email}</td>
+            <td style={{ color: "#E11D2E", fontWeight: 600 }}>
+              {email.age_minutes} min
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  )}
+</section>
+
 
       {/* Table */}
       <section>
@@ -296,8 +341,8 @@ function App() {
               <tr key={`${row.employee_email}-${row.date}`}>
                 <td>{row.date}</td>
                 <td>{row.employee_email}</td>
-                <td>{row.total_emails_received}</td>
-                <td>{row.total_emails_responded}</td>
+                <td style={{ color: "#0A2540", fontWeight: 600 }}>{row.total_emails_received}</td>
+                <td style={{ color: "#E11D2E", fontWeight: 600 }}>{row.total_emails_responded}</td>
                 <td>{row.avg_response_time_minutes ?? "—"}</td>
                 <td>{row.sla_breaches}</td>
                 <td>{row.slaPercent ?? "—"}%</td>
