@@ -1,3 +1,51 @@
+.task-section {
+  margin-top: 40px;
+}
+
+.task-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 12px;
+}
+
+.task-table th,
+.task-table td {
+  padding: 10px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.breach-row {
+  background-color: #fff5f5;
+}
+
+.badge {
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.badge.breach {
+  background: #dc2626;
+  color: white;
+}
+
+.badge.ok {
+  background: #16a34a;
+  color: white;
+}
+
+.sla-note {
+  margin-left: 10px;
+  font-size: 14px;
+  color: #6b7280;
+}
+
+.success-text {
+  color: #16a34a;
+  font-weight: 600;
+}
+
 body {
   margin: 0;
   font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
