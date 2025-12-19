@@ -40,21 +40,30 @@ function App() {
   }
 
   /* ------------------------------
-     TEAM ROLLUPS
+     USE LATEST AVAILABLE DATE
   ------------------------------- */
+  const latestDate =
+    teamMetrics.length > 0 ? teamMetrics[0].date : null;
 
-  const totalTeamResponses = teamMetrics.reduce(
+  const latestMetrics = latestDate
+    ? teamMetrics.filter(r => r.date === latestDate)
+    : [];
+
+  /* ------------------------------
+     TEAM ROLLUPS (LATEST DATE)
+  ------------------------------- */
+  const totalTeamResponses = latestMetrics.reduce(
     (sum, r) => sum + (r.total_first_responses || 0),
     0
   );
 
-  const totalTeamBreaches = teamMetrics.reduce(
+  const totalTeamBreaches = latestMetrics.reduce(
     (sum, r) => sum + (r.sla_breaches || 0),
     0
   );
 
   const weightedAvgResponse = (() => {
-    const weighted = teamMetrics.reduce(
+    const weighted = latestMetrics.reduce(
       (acc, r) => {
         acc.total +=
           (r.avg_first_response_minutes || 0) *
@@ -79,10 +88,10 @@ function App() {
       : "—";
 
   /* ------------------------------
-     Aggregate per Employee
+     AGGREGATE PER EMPLOYEE
   ------------------------------- */
   const byEmployee = Object.values(
-    teamMetrics.reduce((acc, row) => {
+    latestMetrics.reduce((acc, row) => {
       if (!acc[row.employee_email]) {
         acc[row.employee_email] = {
           employee_email: row.employee_email,
@@ -94,7 +103,8 @@ function App() {
 
       acc[row.employee_email].total_first_responses +=
         row.total_first_responses || 0;
-      acc[row.employee_email].sla_breaches += row.sla_breaches || 0;
+      acc[row.employee_email].sla_breaches +=
+        row.sla_breaches || 0;
       acc[row.employee_email].weighted_response +=
         (row.avg_first_response_minutes || 0) *
         (row.total_first_responses || 0);
@@ -125,8 +135,13 @@ function App() {
   return (
     <div className="container">
       <h1>Solvit Email Response Dashboard</h1>
+      {latestDate && (
+        <p className="subtitle">
+          Showing latest available data: <strong>{latestDate}</strong>
+        </p>
+      )}
 
-      {/* TEAM KPI CARDS */}
+      {/* KPI CARDS */}
       <section className="kpi-grid">
         <div className="kpi-card">
           <h3>Team First Responses</h3>
@@ -144,7 +159,7 @@ function App() {
         </div>
       </section>
 
-      {/* TEAM LOAD CHART */}
+      {/* LOAD DISTRIBUTION */}
       <section>
         <h2>Team Load Distribution</h2>
         <ResponsiveContainer width="100%" height={300}>
@@ -161,7 +176,7 @@ function App() {
         </ResponsiveContainer>
       </section>
 
-      {/* TEAM TABLE */}
+      {/* SLA TABLE */}
       <section>
         <h2>Team SLA Performance</h2>
         <table>
