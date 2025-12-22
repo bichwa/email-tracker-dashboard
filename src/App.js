@@ -13,89 +13,101 @@ import "./App.css";
 
 function App() {
   const [teamMetrics, setTeamMetrics] = useState([]);
-  const [loadingTeam, setLoadingTeam] = useState(true);
+  const [loading, setLoading] = useState(true);
 
   /* ------------------------------
-     Load Team First Responder Data
+     LOAD DATA
   ------------------------------- */
   useEffect(() => {
-    async function loadTeamMetrics() {
+    async function loadMetrics() {
       const { data, error } = await supabase
         .from("daily_first_responder_metrics")
-        .select("*")
+        .select(
+          `
+          date,
+          employee_email,
+          total_first_responses,
+          avg_first_response_minutes,
+          sla_breaches
+        `
+        )
         .order("date", { ascending: false });
 
-      if (!error) {
+      if (error) {
+        console.error("Supabase error:", error);
+      } else {
         setTeamMetrics(data || []);
       }
 
-      setLoadingTeam(false);
+      setLoading(false);
     }
 
-    loadTeamMetrics();
+    loadMetrics();
   }, []);
 
-  if (loadingTeam) {
+  if (loading) {
     return <p className="loading">Loading team metrics…</p>;
   }
 
   /* ------------------------------
      TEAM ROLLUPS
   ------------------------------- */
-
-  const totalTeamResponses = teamMetrics.reduce(
+  const totalResponses = teamMetrics.reduce(
     (sum, r) => sum + (r.total_first_responses || 0),
     0
   );
 
-  const totalTeamBreaches = teamMetrics.reduce(
+  const totalBreaches = teamMetrics.reduce(
     (sum, r) => sum + (r.sla_breaches || 0),
     0
   );
 
-  const weightedAvgResponse = (() => {
-    const weighted = teamMetrics.reduce(
-      (acc, r) => {
-        acc.total +=
-          (r.avg_first_response_minutes || 0) *
-          (r.total_first_responses || 0);
-        acc.count += r.total_first_responses || 0;
-        return acc;
-      },
-      { total: 0, count: 0 }
-    );
+  const weightedAvg = (() => {
+    let total = 0;
+    let count = 0;
 
-    if (weighted.count === 0) return "—";
-    return Math.round((weighted.total / weighted.count) * 10) / 10;
+    for (const r of teamMetrics) {
+      if (
+        typeof r.avg_first_response_minutes === "number" &&
+        r.total_first_responses > 0
+      ) {
+        total +=
+          r.avg_first_response_minutes * r.total_first_responses;
+        count += r.total_first_responses;
+      }
+    }
+
+    return count > 0 ? Math.round((total / count) * 10) / 10 : "—";
   })();
 
-  const teamSlaPercent =
-    totalTeamResponses > 0
+  const slaPercent =
+    totalResponses > 0
       ? Math.round(
-          ((totalTeamResponses - totalTeamBreaches) /
-            totalTeamResponses) *
-            100
+          ((totalResponses - totalBreaches) / totalResponses) * 100
         )
       : "—";
 
   /* ------------------------------
-     Aggregate per Employee
+     AGGREGATE PER EMPLOYEE
   ------------------------------- */
-  const byEmployee = Object.values(
+  const perEmployee = Object.values(
     teamMetrics.reduce((acc, row) => {
       if (!acc[row.employee_email]) {
         acc[row.employee_email] = {
           employee_email: row.employee_email,
           total_first_responses: 0,
           sla_breaches: 0,
-          weighted_response: 0
+          weighted: 0
         };
       }
 
       acc[row.employee_email].total_first_responses +=
         row.total_first_responses || 0;
-      acc[row.employee_email].sla_breaches += row.sla_breaches || 0;
-      acc[row.employee_email].weighted_response +=
+
+      acc[row.employee_email].sla_breaches +=
+        row.sla_breaches || 0;
+
+      acc[row.employee_email].weighted +=
         (row.avg_first_response_minutes || 0) *
         (row.total_first_responses || 0);
 
@@ -106,7 +118,7 @@ function App() {
     avg_response:
       emp.total_first_responses > 0
         ? Math.round(
-            (emp.weighted_response / emp.total_first_responses) * 10
+            (emp.weighted / emp.total_first_responses) * 10
           ) / 10
         : "—",
     sla_percent:
@@ -126,29 +138,29 @@ function App() {
     <div className="container">
       <h1>Solvit Email Response Dashboard</h1>
 
-      {/* TEAM KPI CARDS */}
+      {/* KPI CARDS */}
       <section className="kpi-grid">
         <div className="kpi-card">
           <h3>Team First Responses</h3>
-          <p>{totalTeamResponses}</p>
+          <p>{totalResponses}</p>
         </div>
 
         <div className="kpi-card">
           <h3>Team Avg Response</h3>
-          <p>{weightedAvgResponse} min</p>
+          <p>{weightedAvg} min</p>
         </div>
 
         <div className="kpi-card">
           <h3>Team SLA %</h3>
-          <p>{teamSlaPercent}%</p>
+          <p>{slaPercent}%</p>
         </div>
       </section>
 
-      {/* TEAM LOAD CHART */}
+      {/* BAR CHART */}
       <section>
         <h2>Team Load Distribution</h2>
         <ResponsiveContainer width="100%" height={300}>
-          <BarChart data={byEmployee}>
+          <BarChart data={perEmployee}>
             <XAxis dataKey="employee_email" />
             <YAxis />
             <Tooltip />
@@ -161,7 +173,7 @@ function App() {
         </ResponsiveContainer>
       </section>
 
-      {/* TEAM TABLE */}
+      {/* TABLE */}
       <section>
         <h2>Team SLA Performance</h2>
         <table>
@@ -175,7 +187,7 @@ function App() {
             </tr>
           </thead>
           <tbody>
-            {byEmployee.map(emp => (
+            {perEmployee.map(emp => (
               <tr key={emp.employee_email}>
                 <td>{emp.employee_email}</td>
                 <td>{emp.total_first_responses}</td>
