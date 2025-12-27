@@ -7,7 +7,9 @@ import {
   YAxis,
   Tooltip,
   ResponsiveContainer,
-  Legend
+  Legend,
+  LineChart,
+  Line
 } from "recharts";
 import "./App.css";
 
@@ -16,7 +18,7 @@ function App() {
   const [loading, setLoading] = useState(true);
 
   /* ------------------------------
-     LOAD DATA
+     LOAD METRICS
   ------------------------------- */
   useEffect(() => {
     async function loadMetrics() {
@@ -72,7 +74,7 @@ function App() {
     0
   );
 
-  const weightedAvgResponse = (() => {
+  const avgResponse = (() => {
     let total = 0;
     let count = 0;
 
@@ -142,6 +144,42 @@ function App() {
   }));
 
   /* ------------------------------
+     DAILY TREND (LAST 30 DATES)
+  ------------------------------- */
+  const dailyTrend = Object.values(
+    teamMetrics.reduce((acc, r) => {
+      if (!acc[r.date]) {
+        acc[r.date] = { date: r.date, total: 0 };
+      }
+      acc[r.date].total += r.total_first_responses || 0;
+      return acc;
+    }, {})
+  )
+    .sort((a, b) => a.date.localeCompare(b.date))
+    .slice(-30);
+
+  /* ------------------------------
+     EXPORT CSV
+  ------------------------------- */
+  function exportCSV(rows) {
+    if (!rows.length) return;
+
+    const header = Object.keys(rows[0]).join(",");
+    const csv = [
+      header,
+      ...rows.map(r => Object.values(r).join(","))
+    ].join("\n");
+
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `first-responders-${latestDate}.csv`;
+    a.click();
+  }
+
+  /* ------------------------------
      RENDER
   ------------------------------- */
   return (
@@ -150,7 +188,8 @@ function App() {
 
       {latestDate && (
         <p className="subtitle">
-          Showing latest available data: <strong>{latestDate}</strong>
+          Showing latest available responder data:{" "}
+          <strong>{latestDate}</strong>
         </p>
       )}
 
@@ -163,7 +202,7 @@ function App() {
 
         <div className="kpi-card">
           <h3>Team Avg Response</h3>
-          <p>{weightedAvgResponse} min</p>
+          <p>{avgResponse} min</p>
         </div>
 
         <div className="kpi-card">
@@ -172,7 +211,7 @@ function App() {
         </div>
       </section>
 
-      {/* BAR CHART */}
+      {/* LOAD DISTRIBUTION */}
       <section>
         <h2>Team Load Distribution</h2>
         <ResponsiveContainer width="100%" height={300}>
@@ -189,9 +228,35 @@ function App() {
         </ResponsiveContainer>
       </section>
 
-      {/* TABLE */}
+      {/* DAILY TREND */}
+      <section>
+        <h2>Daily First Responses (Last 30)</h2>
+        <ResponsiveContainer width="100%" height={300}>
+          <LineChart data={dailyTrend}>
+            <XAxis dataKey="date" />
+            <YAxis />
+            <Tooltip />
+            <Legend />
+            <Line
+              type="monotone"
+              dataKey="total"
+              name="First Responses"
+            />
+          </LineChart>
+        </ResponsiveContainer>
+      </section>
+
+      {/* SLA TABLE */}
       <section>
         <h2>Team SLA Performance</h2>
+
+        <button
+          className="export-btn"
+          onClick={() => exportCSV(latestMetrics)}
+        >
+          Export Latest Data
+        </button>
+
         <table>
           <thead>
             <tr>
@@ -220,4 +285,3 @@ function App() {
 }
 
 export default App;
-
