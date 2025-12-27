@@ -50,23 +50,33 @@ function App() {
   }
 
   /* ------------------------------
-     TEAM ROLLUPS
+     USE LATEST AVAILABLE DATE
   ------------------------------- */
-  const totalResponses = teamMetrics.reduce(
+  const latestDate =
+    teamMetrics.length > 0 ? teamMetrics[0].date : null;
+
+  const latestMetrics = latestDate
+    ? teamMetrics.filter(r => r.date === latestDate)
+    : [];
+
+  /* ------------------------------
+     TEAM ROLLUPS (LATEST DATE)
+  ------------------------------- */
+  const totalResponses = latestMetrics.reduce(
     (sum, r) => sum + (r.total_first_responses || 0),
     0
   );
 
-  const totalBreaches = teamMetrics.reduce(
+  const totalBreaches = latestMetrics.reduce(
     (sum, r) => sum + (r.sla_breaches || 0),
     0
   );
 
-  const weightedAvg = (() => {
+  const weightedAvgResponse = (() => {
     let total = 0;
     let count = 0;
 
-    for (const r of teamMetrics) {
+    for (const r of latestMetrics) {
       if (
         typeof r.avg_first_response_minutes === "number" &&
         r.total_first_responses > 0
@@ -91,7 +101,7 @@ function App() {
      AGGREGATE PER EMPLOYEE
   ------------------------------- */
   const perEmployee = Object.values(
-    teamMetrics.reduce((acc, row) => {
+    latestMetrics.reduce((acc, row) => {
       if (!acc[row.employee_email]) {
         acc[row.employee_email] = {
           employee_email: row.employee_email,
@@ -138,6 +148,12 @@ function App() {
     <div className="container">
       <h1>Solvit Email Response Dashboard</h1>
 
+      {latestDate && (
+        <p className="subtitle">
+          Showing latest available data: <strong>{latestDate}</strong>
+        </p>
+      )}
+
       {/* KPI CARDS */}
       <section className="kpi-grid">
         <div className="kpi-card">
@@ -147,7 +163,7 @@ function App() {
 
         <div className="kpi-card">
           <h3>Team Avg Response</h3>
-          <p>{weightedAvg} min</p>
+          <p>{weightedAvgResponse} min</p>
         </div>
 
         <div className="kpi-card">
