@@ -7,9 +7,7 @@ import {
   YAxis,
   Tooltip,
   ResponsiveContainer,
-  Legend,
-  LineChart,
-  Line
+  Legend
 } from "recharts";
 import "./App.css";
 
@@ -118,12 +116,12 @@ function App() {
       );
 
       const total = rows.reduce(
-        (s, r) => s + r.total_first_responses,
+        (s, r) => s + (r.total_first_responses || 0),
         0
       );
 
       const breaches = rows.reduce(
-        (s, r) => s + r.sla_breaches,
+        (s, r) => s + (r.sla_breaches || 0),
         0
       );
 
@@ -132,8 +130,8 @@ function App() {
           ? rows.reduce(
               (s, r) =>
                 s +
-                r.avg_first_response_minutes *
-                  r.total_first_responses,
+                (r.avg_first_response_minutes || 0) *
+                  (r.total_first_responses || 0),
               0
             ) / total
           : null;
@@ -189,15 +187,18 @@ function App() {
   }, [byEmployee]);
 
   /* ------------------------------
-     Trend data
+     Stacked bar data (daily by employee)
   ------------------------------- */
-  const trendData = useMemo(() => {
+  const stackedByDate = useMemo(() => {
     const map = {};
+
     metrics.forEach(r => {
       if (!map[r.date]) map[r.date] = { date: r.date };
       map[r.date][r.employee_email] =
-        r.total_first_responses;
+        (map[r.date][r.employee_email] || 0) +
+        (r.total_first_responses || 0);
     });
+
     return Object.values(map).sort((a, b) =>
       a.date.localeCompare(b.date)
     );
@@ -214,7 +215,7 @@ function App() {
     <div className="container">
       <h1>Solvit Email Response Dashboard</h1>
 
-      {/* UNANSWERED EMAILS */}
+      {/* Unanswered Emails */}
       <section className="unanswered">
         <h2>Unanswered Emails (Live)</h2>
 
@@ -228,7 +229,7 @@ function App() {
                 <th>Subject</th>
                 <th>Inbox</th>
                 <th>Minutes Unanswered</th>
-                <th>SLA Status</th>
+                <th>SLA</th>
                 <th>Action</th>
               </tr>
             </thead>
@@ -247,11 +248,7 @@ function App() {
                     <td>{e.subject || "(No subject)"}</td>
                     <td>{e.employee_email}</td>
                     <td>{mins}</td>
-                    <td>
-                      {breached
-                        ? "🔴 Breached"
-                        : "🟢 Within SLA"}
-                    </td>
+                    <td>{breached ? "🔴 Breached" : "🟢 OK"}</td>
                     <td>
                       {link ? (
                         <a
@@ -322,41 +319,35 @@ function App() {
         <h2>Team Load Distribution</h2>
         <ResponsiveContainer width="100%" height={300}>
           <BarChart data={byEmployee}>
-            <XAxis dataKey="employee_email" />
+            <XAxis dataKey="name" />
             <YAxis />
             <Tooltip />
             <Legend />
-            <Bar
-              dataKey="total_first_responses"
-              name="First Responses"
-            />
+            <Bar dataKey="total_first_responses" />
           </BarChart>
         </ResponsiveContainer>
       </section>
 
-      {/* DAILY FIRST RESPONSES — STACKED BY EMPLOYEE */}
-<section>
-  <h2>Daily First Responses (by Employee)</h2>
-
-  <ResponsiveContainer width="100%" height={400}>
-    <BarChart data={stackedByDate}>
-      <XAxis dataKey="date" />
-      <YAxis />
-      <Tooltip />
-      <Legend />
-
-      {employees.map((email, index) => (
-        <Bar
-          key={email}
-          dataKey={email}
-          stackId="responses"
-          name={email}
-        />
-      ))}
-    </BarChart>
-  </ResponsiveContainer>
-</section>
-
+      {/* Stacked Bar */}
+      <section>
+        <h2>Daily First Responses (Stacked by Employee)</h2>
+        <ResponsiveContainer width="100%" height={400}>
+          <BarChart data={stackedByDate}>
+            <XAxis dataKey="date" />
+            <YAxis />
+            <Tooltip />
+            <Legend />
+            {employees.map(emp => (
+              <Bar
+                key={emp.email}
+                dataKey={emp.email}
+                stackId="responses"
+                name={emp.name || emp.email}
+              />
+            ))}
+          </BarChart>
+        </ResponsiveContainer>
+      </section>
 
       {/* SLA Heatmap */}
       <section>
@@ -380,7 +371,7 @@ function App() {
                     : ""
                 }
               >
-                <td>{e.employee_email}</td>
+                <td>{e.name}</td>
                 <td>{e.total_first_responses}</td>
                 <td>{e.sla_breaches}</td>
                 <td>{e.sla_percent}%</td>
