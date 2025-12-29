@@ -20,6 +20,11 @@ function minutesSince(ts) {
   return Math.round((Date.now() - new Date(ts)) / 60000);
 }
 
+function outlookLink(messageId) {
+  if (!messageId) return null;
+  return `https://outlook.office.com/mail/deeplink/read/${messageId}`;
+}
+
 function downloadCSV(rows, filename) {
   if (!rows.length) return;
 
@@ -80,7 +85,14 @@ function App() {
         supabase
           .from("tracked_emails")
           .select(
-            "id, subject, client_email, employee_email, received_at"
+            `
+            id,
+            subject,
+            client_email,
+            employee_email,
+            received_at,
+            message_id
+          `
           )
           .eq("has_response", false)
           .order("received_at", { ascending: true })
@@ -217,12 +229,14 @@ function App() {
                 <th>Inbox</th>
                 <th>Minutes Unanswered</th>
                 <th>SLA Status</th>
+                <th>Action</th>
               </tr>
             </thead>
             <tbody>
               {unanswered.map(e => {
                 const mins = minutesSince(e.received_at);
                 const breached = mins > 15;
+                const link = outlookLink(e.message_id);
 
                 return (
                   <tr
@@ -237,6 +251,19 @@ function App() {
                       {breached
                         ? "🔴 Breached"
                         : "🟢 Within SLA"}
+                    </td>
+                    <td>
+                      {link ? (
+                        <a
+                          href={link}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          Open in Outlook
+                        </a>
+                      ) : (
+                        "—"
+                      )}
                     </td>
                   </tr>
                 );
