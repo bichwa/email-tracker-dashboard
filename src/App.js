@@ -334,26 +334,29 @@ function App() {
         </ResponsiveContainer>
       </section>
 
-      {/* Employee Trends */}
-      <section>
-        <h2>Employee Trends</h2>
-        <ResponsiveContainer width="100%" height={350}>
-          <LineChart data={trendData}>
-            <XAxis dataKey="date" />
-            <YAxis />
-            <Tooltip />
-            <Legend />
-            {employees.map(emp => (
-              <Line
-                key={emp.email}
-                type="monotone"
-                dataKey={emp.email}
-                dot={false}
-              />
-            ))}
-          </LineChart>
-        </ResponsiveContainer>
-      </section>
+      {/* DAILY FIRST RESPONSES — STACKED BY EMPLOYEE */}
+<section>
+  <h2>Daily First Responses (by Employee)</h2>
+
+  <ResponsiveContainer width="100%" height={400}>
+    <BarChart data={stackedByDate}>
+      <XAxis dataKey="date" />
+      <YAxis />
+      <Tooltip />
+      <Legend />
+
+      {employees.map((email, index) => (
+        <Bar
+          key={email}
+          dataKey={email}
+          stackId="responses"
+          name={email}
+        />
+      ))}
+    </BarChart>
+  </ResponsiveContainer>
+</section>
+
 
       {/* SLA Heatmap */}
       <section>
