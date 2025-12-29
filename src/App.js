@@ -16,7 +16,9 @@ import "./App.css";
 /* ------------------------------
    Helpers
 ------------------------------- */
-const DAYS_OPTIONS = [7, 14, 30, 60];
+function minutesSince(ts) {
+  return Math.round((Date.now() - new Date(ts)) / 60000);
+}
 
 function downloadCSV(rows, filename) {
   if (!rows.length) return;
@@ -36,7 +38,6 @@ function downloadCSV(rows, filename) {
   a.href = url;
   a.download = filename;
   a.click();
-
   URL.revokeObjectURL(url);
 }
 
@@ -46,11 +47,12 @@ function downloadCSV(rows, filename) {
 function App() {
   const [employees, setEmployees] = useState([]);
   const [metrics, setMetrics] = useState([]);
+  const [unanswered, setUnanswered] = useState([]);
   const [days, setDays] = useState(30);
   const [loading, setLoading] = useState(true);
 
   /* ------------------------------
-     Load Employees + Metrics
+     Load data
   ------------------------------- */
   useEffect(() => {
     async function load() {
@@ -60,7 +62,11 @@ function App() {
       since.setDate(since.getDate() - days);
       const sinceISO = since.toISOString().slice(0, 10);
 
-      const [{ data: emp }, { data: met }] = await Promise.all([
+      const [
+        { data: emp },
+        { data: met },
+        { data: unresp }
+      ] = await Promise.all([
         supabase
           .from("employees")
           .select("email, name, department")
@@ -69,11 +75,21 @@ function App() {
         supabase
           .from("daily_first_responder_metrics")
           .select("*")
-          .gte("date", sinceISO)
+          .gte("date", sinceISO),
+
+        supabase
+          .from("tracked_emails")
+          .select(
+            "id, subject, client_email, employee_email, received_at"
+          )
+          .eq("has_response", false)
+          .order("received_at", { ascending: true })
+          .limit(20)
       ]);
 
       setEmployees(emp || []);
       setMetrics(met || []);
+      setUnanswered(unresp || []);
       setLoading(false);
     }
 
@@ -81,7 +97,7 @@ function App() {
   }, [days]);
 
   /* ------------------------------
-     Merge Employees + Metrics
+     Merge employees + metrics
   ------------------------------- */
   const byEmployee = useMemo(() => {
     return employees.map(emp => {
@@ -99,7 +115,7 @@ function App() {
         0
       );
 
-      const weightedAvg =
+      const avg =
         total > 0
           ? rows.reduce(
               (s, r) =>
@@ -113,17 +129,12 @@ function App() {
       return {
         employee_email: emp.email,
         name: emp.name,
-        department: emp.department,
         total_first_responses: total,
-        avg_response: weightedAvg
-          ? Math.round(weightedAvg)
-          : "—",
+        avg_response: avg ? Math.round(avg) : "—",
         sla_breaches: breaches,
         sla_percent:
           total > 0
-            ? Math.round(
-                ((total - breaches) / total) * 100
-              )
+            ? Math.round(((total - breaches) / total) * 100)
             : "—"
       };
     });
@@ -142,23 +153,22 @@ function App() {
       0
     );
 
-    const avg =
-      total > 0
-        ? Math.round(
-            byEmployee.reduce(
-              (s, e) =>
-                s +
-                (e.avg_response === "—"
-                  ? 0
-                  : e.avg_response * e.total_first_responses),
-              0
-            ) / total
-          )
-        : "—";
-
     return {
       total,
-      avg,
+      avg:
+        total > 0
+          ? Math.round(
+              byEmployee.reduce(
+                (s, e) =>
+                  s +
+                  (e.avg_response === "—"
+                    ? 0
+                    : e.avg_response *
+                      e.total_first_responses),
+                0
+              ) / total
+            )
+          : "—",
       sla:
         total > 0
           ? Math.round(((total - breaches) / total) * 100)
@@ -167,19 +177,17 @@ function App() {
   }, [byEmployee]);
 
   /* ------------------------------
-     Employee Trend Data
+     Trend data
   ------------------------------- */
   const trendData = useMemo(() => {
     const map = {};
-
     metrics.forEach(r => {
       if (!map[r.date]) map[r.date] = { date: r.date };
       map[r.date][r.employee_email] =
         r.total_first_responses;
     });
-
-    return Object.values(map).sort(
-      (a, b) => a.date.localeCompare(b.date)
+    return Object.values(map).sort((a, b) =>
+      a.date.localeCompare(b.date)
     );
   }, [metrics]);
 
@@ -194,6 +202,50 @@ function App() {
     <div className="container">
       <h1>Solvit Email Response Dashboard</h1>
 
+      {/* UNANSWERED EMAILS */}
+      <section className="unanswered">
+        <h2>Unanswered Emails (Live)</h2>
+
+        {unanswered.length === 0 ? (
+          <p>🎉 All client emails have been responded to.</p>
+        ) : (
+          <table>
+            <thead>
+              <tr>
+                <th>Client</th>
+                <th>Subject</th>
+                <th>Inbox</th>
+                <th>Minutes Unanswered</th>
+                <th>SLA Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {unanswered.map(e => {
+                const mins = minutesSince(e.received_at);
+                const breached = mins > 15;
+
+                return (
+                  <tr
+                    key={e.id}
+                    className={breached ? "sla-breach" : ""}
+                  >
+                    <td>{e.client_email}</td>
+                    <td>{e.subject || "(No subject)"}</td>
+                    <td>{e.employee_email}</td>
+                    <td>{mins}</td>
+                    <td>
+                      {breached
+                        ? "🔴 Breached"
+                        : "🟢 Within SLA"}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+      </section>
+
       {/* Controls */}
       <div className="controls">
         <label>
@@ -202,7 +254,7 @@ function App() {
             value={days}
             onChange={e => setDays(Number(e.target.value))}
           >
-            {DAYS_OPTIONS.map(d => (
+            {[7, 14, 30, 60].map(d => (
               <option key={d} value={d}>
                 {d} days
               </option>
@@ -269,7 +321,6 @@ function App() {
                 key={emp.email}
                 type="monotone"
                 dataKey={emp.email}
-                strokeWidth={2}
                 dot={false}
               />
             ))}
