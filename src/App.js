@@ -11,6 +11,8 @@ import {
 } from "recharts";
 import "./App.css";
 
+const SLA_MINUTES = 15;
+
 function minutesSince(ts) {
   return Math.round((Date.now() - new Date(ts)) / 60000);
 }
@@ -21,11 +23,11 @@ function outlookLink(id) {
     : null;
 }
 
-export default function App() {
+function App() {
   const [employees, setEmployees] = useState([]);
   const [metrics, setMetrics] = useState([]);
   const [unanswered, setUnanswered] = useState([]);
-  const [days, setDays] = useState(7);
+  const [days, setDays] = useState(30);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -36,23 +38,35 @@ export default function App() {
       since.setDate(since.getDate() - days);
       const sinceISO = since.toISOString();
 
-      const empRes = await supabase
-        .from("employees")
-        .select("email, name")
-        .eq("is_client_facing", true);
+      const [
+        empRes,
+        metRes,
+        unRes
+      ] = await Promise.all([
+        supabase
+          .from("employees")
+          .select("email,name")
+          .eq("is_client_facing", true),
 
-      const metRes = await supabase
-        .from("tracked_emails")
-        .select("employee_email, response_time_minutes, sla_breached")
-        .gte("received_at", sinceISO)
-        .eq("has_response", true);
+        supabase
+          .from("daily_first_responder_metrics")
+          .select("*")
+          .gte("date", sinceISO.slice(0, 10)),
 
-      const unRes = await supabase
-        .from("tracked_emails")
-        .select("id, subject, client_email, employee_email, received_at, graph_message_id")
-        .eq("has_response", false)
-        .order("received_at", { ascending: true })
-        .limit(100);
+        supabase
+          .from("tracked_emails")
+          .select(`
+            id,
+            subject,
+            client_email,
+            employee_email,
+            received_at,
+            graph_message_id
+          `)
+          .eq("has_response", false)
+          .gte("received_at", sinceISO)
+          .order("received_at", { ascending: true })
+      ]);
 
       setEmployees(empRes.data || []);
       setMetrics(metRes.data || []);
@@ -65,43 +79,69 @@ export default function App() {
 
   const byEmployee = useMemo(() => {
     return employees.map(e => {
-      const rows = metrics.filter(m => m.employee_email === e.email);
-      const total = rows.length;
-      const breaches = rows.filter(r => r.sla_breached).length;
+      const rows = metrics.filter(
+        r => r.employee_email === e.email
+      );
+
+      const total = rows.reduce(
+        (s, r) => s + (r.total_first_responses || 0),
+        0
+      );
+
+      const breaches = rows.reduce(
+        (s, r) => s + (r.sla_breaches || 0),
+        0
+      );
+
       const avg =
         total > 0
           ? Math.round(
-              rows.reduce((s, r) => s + (r.response_time_minutes || 0), 0) /
-                total
+              rows.reduce(
+                (s, r) =>
+                  s +
+                  (r.avg_first_response_minutes || 0) *
+                    (r.total_first_responses || 0),
+                0
+              ) / total
             )
           : 0;
 
       return {
         name: e.name,
+        email: e.email,
         total,
+        breaches,
         avg,
-        sla: total > 0 ? Math.round(((total - breaches) / total) * 100) : 0
+        sla: total > 0
+          ? Math.round(((total - breaches) / total) * 100)
+          : 0
       };
     });
   }, [employees, metrics]);
 
   const teamTotals = useMemo(() => {
-    const total = byEmployee.reduce((s, e) => s + e.total, 0);
-    const breaches = byEmployee.reduce(
-      (s, e) => s + (e.sla < 100 ? 1 : 0),
+    const total = byEmployee.reduce(
+      (s, e) => s + e.total,
       0
     );
-    const avg =
-      total > 0
-        ? Math.round(
-            byEmployee.reduce((s, e) => s + e.avg * e.total, 0) / total
-          )
-        : 0;
+    const breaches = byEmployee.reduce(
+      (s, e) => s + e.breaches,
+      0
+    );
 
     return {
       total,
-      avg,
-      sla: total > 0 ? Math.round(((total - breaches) / total) * 100) : 0
+      avg: total > 0
+        ? Math.round(
+            byEmployee.reduce(
+              (s, e) => s + e.avg * e.total,
+              0
+            ) / total
+          )
+        : 0,
+      sla: total > 0
+        ? Math.round(((total - breaches) / total) * 100)
+        : 0
     };
   }, [byEmployee]);
 
@@ -115,57 +155,44 @@ export default function App() {
 
       <section>
         <h2>Unanswered Emails Live</h2>
-        {unanswered.length === 0 ? (
-          <p>All client emails handled.</p>
-        ) : (
-          <table>
-            <thead>
-              <tr>
-                <th>Client</th>
-                <th>Subject</th>
-                <th>Inbox</th>
-                <th>Minutes</th>
-                <th>SLA</th>
-                <th>Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {unanswered.map(e => {
-                const mins = minutesSince(e.received_at);
-                const breached = mins > 15;
-                return (
-                  <tr key={e.id}>
-                    <td>{e.client_email}</td>
-                    <td>{e.subject || "(No subject)"}</td>
-                    <td>{e.employee_email}</td>
-                    <td>{mins}</td>
-                    <td>{breached ? "Breached" : "OK"}</td>
-                    <td>
-                      {outlookLink(e.graph_message_id) && (
-                        <a
-                          href={outlookLink(e.graph_message_id)}
-                          target="_blank"
-                          rel="noreferrer"
-                        >
-                          Open
-                        </a>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        )}
+        <table>
+          <thead>
+            <tr>
+              <th>Client</th>
+              <th>Subject</th>
+              <th>Inbox</th>
+              <th>Minutes</th>
+              <th>SLA</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {unanswered.map(e => {
+              const mins = minutesSince(e.received_at);
+              return (
+                <tr key={e.id}>
+                  <td>{e.client_email}</td>
+                  <td>{e.subject || "(No subject)"}</td>
+                  <td>{e.employee_email}</td>
+                  <td>{mins}</td>
+                  <td>
+                    {mins > SLA_MINUTES ? "Breached" : "OK"}
+                  </td>
+                  <td>
+                    <a
+                      href={outlookLink(e.graph_message_id)}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Open
+                    </a>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
       </section>
-
-      <div className="controls">
-        <select value={days} onChange={e => setDays(Number(e.target.value))}>
-          <option value={7}>7 days</option>
-          <option value={14}>14 days</option>
-          <option value={30}>30 days</option>
-        </select>
-      </div>
 
       <section className="kpis">
         <div>Team Responses {teamTotals.total}</div>
@@ -188,3 +215,5 @@ export default function App() {
     </div>
   );
 }
+
+export default App;
