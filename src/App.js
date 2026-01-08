@@ -11,10 +11,8 @@ import {
 } from "recharts";
 import "./App.css";
 
-const SLA_TARGET_MINUTES = 15;
-
-function minutesBetween(a, b) {
-  return Math.round((new Date(b) - new Date(a)) / 60000);
+function minutesSince(ts) {
+  return Math.round((Date.now() - new Date(ts).getTime()) / 60000);
 }
 
 function outlookLink(graphMessageId) {
@@ -24,7 +22,6 @@ function outlookLink(graphMessageId) {
 
 function downloadCSV(rows, filename) {
   if (!rows.length) return;
-
   const headers = Object.keys(rows[0]);
   const csv = [
     headers.join(","),
@@ -35,7 +32,6 @@ function downloadCSV(rows, filename) {
 
   const blob = new Blob([csv], { type: "text/csv" });
   const url = URL.createObjectURL(blob);
-
   const a = document.createElement("a");
   a.href = url;
   a.download = filename;
@@ -45,8 +41,7 @@ function downloadCSV(rows, filename) {
 
 function App() {
   const [employees, setEmployees] = useState([]);
-  const [dailyMetrics, setDailyMetrics] = useState([]);
-  const [liveEmails, setLiveEmails] = useState([]);
+  const [emails, setEmails] = useState([]);
   const [unanswered, setUnanswered] = useState([]);
   const [days, setDays] = useState(30);
   const [loading, setLoading] = useState(true);
@@ -59,55 +54,47 @@ function App() {
       since.setDate(since.getDate() - days);
       const sinceISO = since.toISOString();
 
-      const [
-        { data: emp },
-        { data: daily },
-        { data: live },
-        { data: unresp }
-      ] = await Promise.all([
-        supabase
-          .from("employees")
-          .select("email, name, department")
-          .eq("is_client_facing", true),
+      const [{ data: emp }, { data: mail }, { data: unresp }] =
+        await Promise.all([
+          supabase
+            .from("employees")
+            .select("email, name")
+            .eq("is_client_facing", true),
 
-        supabase
-          .from("daily_first_responder_metrics")
-          .select("*")
-          .gte("date", sinceISO.slice(0, 10)),
+          supabase
+            .from("tracked_emails")
+            .select(`
+              id,
+              subject,
+              client_email,
+              employee_email,
+              received_at,
+              responded_at,
+              response_time_minutes,
+              sla_breached,
+              is_incoming
+            `)
+            .eq("is_incoming", true)
+            .gte("received_at", sinceISO),
 
-        supabase
-          .from("tracked_emails")
-          .select(`
-            id,
-            employee_email,
-            received_at,
-            first_response_at,
-            response_time_minutes,
-            sla_breached
-          `)
-          .eq("is_incoming", true)
-          .eq("has_response", true)
-          .gte("received_at", sinceISO),
-
-        supabase
-          .from("tracked_emails")
-          .select(`
-            id,
-            subject,
-            client_email,
-            employee_email,
-            received_at,
-            graph_message_id
-          `)
-          .eq("is_incoming", true)
-          .eq("has_response", false)
-          .order("received_at", { ascending: true })
-          .limit(50)
-      ]);
+          supabase
+            .from("tracked_emails")
+            .select(`
+              id,
+              subject,
+              client_email,
+              employee_email,
+              received_at,
+              graph_message_id
+            `)
+            .eq("is_incoming", true)
+            .eq("has_response", false)
+            .order("received_at", { ascending: true })
+            .limit(100)
+        ]);
 
       setEmployees(emp || []);
-      setDailyMetrics(daily || []);
-      setLiveEmails(live || []);
+      setEmails(mail || []);
       setUnanswered(unresp || []);
       setLoading(false);
     }
@@ -115,79 +102,50 @@ function App() {
     load();
   }, [days]);
 
-  const liveByEmployee = useMemo(() => {
-    const map = {};
-
-    liveEmails.forEach(e => {
-      if (!e.employee_email) return;
-
-      if (!map[e.employee_email]) {
-        map[e.employee_email] = {
-          total: 0,
-          breaches: 0,
-          sumMinutes: 0
-        };
-      }
-
-      const mins =
-        typeof e.response_time_minutes === "number"
-          ? e.response_time_minutes
-          : minutesBetween(e.received_at, e.first_response_at);
-
-      map[e.employee_email].total += 1;
-      map[e.employee_email].sumMinutes += mins;
-
-      if (mins > SLA_TARGET_MINUTES) {
-        map[e.employee_email].breaches += 1;
-      }
-    });
-
-    return map;
-  }, [liveEmails]);
-
   const byEmployee = useMemo(() => {
     return employees.map(emp => {
-      const stats = liveByEmployee[emp.email];
-
-      if (!stats) {
-        return {
-          employee_email: emp.email,
-          name: emp.name,
-          total_first_responses: 0,
-          avg_response: "—",
-          sla_breaches: 0,
-          sla_percent: "—"
-        };
-      }
-
-      const avg = Math.round(stats.sumMinutes / stats.total);
-      const sla = Math.round(
-        ((stats.total - stats.breaches) / stats.total) * 100
+      const rows = emails.filter(
+        e => e.employee_email === emp.email
       );
+
+      const responded = rows.filter(r => r.responded_at);
+      const total = responded.length;
+      const breaches = responded.filter(r => r.sla_breached).length;
+
+      const avg =
+        total > 0
+          ? Math.round(
+              responded.reduce(
+                (s, r) => s + (r.response_time_minutes || 0),
+                0
+              ) / total
+            )
+          : null;
 
       return {
         employee_email: emp.email,
         name: emp.name,
-        total_first_responses: stats.total,
-        avg_response: avg,
-        sla_breaches: stats.breaches,
-        sla_percent: sla
+        total_first_responses: total,
+        avg_response: avg ?? "—",
+        sla_breaches: breaches,
+        sla_percent:
+          total > 0
+            ? Math.round(((total - breaches) / total) * 100)
+            : "—"
       };
     });
-  }, [employees, liveByEmployee]);
+  }, [employees, emails]);
 
   const teamTotals = useMemo(() => {
     const total = byEmployee.reduce(
       (s, e) => s + e.total_first_responses,
       0
     );
-
     const breaches = byEmployee.reduce(
-      (s, e) => s + (e.sla_breaches || 0),
+      (s, e) => s + e.sla_breaches,
       0
     );
-
-    const weightedAvg =
+    const avg =
       total > 0
         ? Math.round(
             byEmployee.reduce(
@@ -201,28 +159,15 @@ function App() {
           )
         : "—";
 
-    const sla =
-      total > 0
-        ? Math.round(((total - breaches) / total) * 100)
-        : "—";
-
-    return { total, avg: weightedAvg, sla };
+    return {
+      total,
+      avg,
+      sla:
+        total > 0
+          ? Math.round(((total - breaches) / total) * 100)
+          : "—"
+    };
   }, [byEmployee]);
-
-  const stackedByDate = useMemo(() => {
-    const map = {};
-
-    dailyMetrics.forEach(r => {
-      if (!map[r.date]) map[r.date] = { date: r.date };
-      map[r.date][r.employee_email] =
-        (map[r.date][r.employee_email] || 0) +
-        (r.total_first_responses || 0);
-    });
-
-    return Object.values(map).sort((a, b) =>
-      a.date.localeCompare(b.date)
-    );
-  }, [dailyMetrics]);
 
   if (loading) {
     return <p className="loading">Loading dashboard…</p>;
@@ -251,8 +196,8 @@ function App() {
             </thead>
             <tbody>
               {unanswered.map(e => {
-                const mins = minutesBetween(e.received_at, new Date());
-                const breached = mins > SLA_TARGET_MINUTES;
+                const mins = minutesSince(e.received_at);
+                const breached = mins > 15;
                 const link = outlookLink(e.graph_message_id);
 
                 return (
@@ -323,7 +268,7 @@ function App() {
           <p>{teamTotals.avg} min</p>
         </div>
         <div className="kpi-card">
-          <h3>Team SLA %</h3>
+          <h3>Team SLA</h3>
           <p>{teamTotals.sla}%</p>
         </div>
       </section>
@@ -342,23 +287,34 @@ function App() {
       </section>
 
       <section>
-        <h2>Daily First Responses</h2>
-        <ResponsiveContainer width="100%" height={400}>
-          <BarChart data={stackedByDate}>
-            <XAxis dataKey="date" />
-            <YAxis />
-            <Tooltip />
-            <Legend />
-            {employees.map(emp => (
-              <Bar
-                key={emp.email}
-                dataKey={emp.email}
-                stackId="responses"
-                name={emp.name || emp.email}
-              />
+        <h2>SLA Breach Heatmap</h2>
+        <table className="heatmap">
+          <thead>
+            <tr>
+              <th>Employee</th>
+              <th>Responses</th>
+              <th>Breaches</th>
+              <th>SLA</th>
+            </tr>
+          </thead>
+          <tbody>
+            {byEmployee.map(e => (
+              <tr
+                key={e.employee_email}
+                className={
+                  e.sla_percent !== "—" && e.sla_percent < 80
+                    ? "bad"
+                    : ""
+                }
+              >
+                <td>{e.name}</td>
+                <td>{e.total_first_responses}</td>
+                <td>{e.sla_breaches}</td>
+                <td>{e.sla_percent}%</td>
+              </tr>
             ))}
-          </BarChart>
-        </ResponsiveContainer>
+          </tbody>
+        </table>
       </section>
     </div>
   );
