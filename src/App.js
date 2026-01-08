@@ -11,6 +11,7 @@ import {
 } from "recharts";
 import "./App.css";
 
+/* helpers */
 function minutesSince(ts) {
   return Math.round((Date.now() - new Date(ts).getTime()) / 60000);
 }
@@ -22,6 +23,7 @@ function outlookLink(graphMessageId) {
 
 function downloadCSV(rows, filename) {
   if (!rows.length) return;
+
   const headers = Object.keys(rows[0]);
   const csv = [
     headers.join(","),
@@ -43,7 +45,7 @@ function App() {
   const [employees, setEmployees] = useState([]);
   const [emails, setEmails] = useState([]);
   const [unanswered, setUnanswered] = useState([]);
-  const [days, setDays] = useState(30);
+  const [days, setDays] = useState(7);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -52,6 +54,7 @@ function App() {
 
       const since = new Date();
       since.setDate(since.getDate() - days);
+
       const sinceISO = since.toISOString();
 
       const [{ data: emp }, { data: mail }, { data: unresp }] =
@@ -65,16 +68,13 @@ function App() {
             .from("tracked_emails")
             .select(`
               id,
-              subject,
-              client_email,
-              employee_email,
               received_at,
-              responded_at,
               response_time_minutes,
               sla_breached,
-              is_incoming
+              first_responder_email,
+              employee_email,
+              has_response
             `)
-            .eq("is_incoming", true)
             .gte("received_at", sinceISO),
 
           supabase
@@ -87,10 +87,9 @@ function App() {
               received_at,
               graph_message_id
             `)
-            .eq("is_incoming", true)
             .eq("has_response", false)
             .order("received_at", { ascending: true })
-            .limit(100)
+            .limit(50)
         ]);
 
       setEmployees(emp || []);
@@ -102,20 +101,20 @@ function App() {
     load();
   }, [days]);
 
+  /* LIVE KPI COMPUTATION */
   const byEmployee = useMemo(() => {
     return employees.map(emp => {
       const rows = emails.filter(
-        e => e.employee_email === emp.email
+        e => e.first_responder_email === emp.email
       );
 
-      const responded = rows.filter(r => r.responded_at);
-      const total = responded.length;
-      const breaches = responded.filter(r => r.sla_breached).length;
+      const total = rows.length;
+      const breaches = rows.filter(e => e.sla_breached).length;
 
       const avg =
         total > 0
           ? Math.round(
-              responded.reduce(
+              rows.reduce(
                 (s, r) => s + (r.response_time_minutes || 0),
                 0
               ) / total
@@ -145,6 +144,7 @@ function App() {
       (s, e) => s + e.sla_breaches,
       0
     );
+
     const avg =
       total > 0
         ? Math.round(
@@ -159,18 +159,16 @@ function App() {
           )
         : "—";
 
-    return {
-      total,
-      avg,
-      sla:
-        total > 0
-          ? Math.round(((total - breaches) / total) * 100)
-          : "—"
-    };
+    const sla =
+      total > 0
+        ? Math.round(((total - breaches) / total) * 100)
+        : "—";
+
+    return { total, avg, sla };
   }, [byEmployee]);
 
   if (loading) {
-    return <p className="loading">Loading dashboard…</p>;
+    return <p className="loading">Loading…</p>;
   }
 
   return (
@@ -201,10 +199,7 @@ function App() {
                 const link = outlookLink(e.graph_message_id);
 
                 return (
-                  <tr
-                    key={e.id}
-                    className={breached ? "sla-breach" : ""}
-                  >
+                  <tr key={e.id}>
                     <td>{e.client_email}</td>
                     <td>{e.subject || "(No subject)"}</td>
                     <td>{e.employee_email}</td>
@@ -212,11 +207,7 @@ function App() {
                     <td>{breached ? "Breached" : "OK"}</td>
                     <td>
                       {link ? (
-                        <a
-                          href={link}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                        >
+                        <a href={link} target="_blank" rel="noreferrer">
                           Open in Outlook
                         </a>
                       ) : (
@@ -248,10 +239,7 @@ function App() {
 
         <button
           onClick={() =>
-            downloadCSV(
-              byEmployee,
-              `email-response-${days}days.csv`
-            )
+            downloadCSV(byEmployee, `email-response-${days}days.csv`)
           }
         >
           Export CSV
@@ -268,7 +256,7 @@ function App() {
           <p>{teamTotals.avg} min</p>
         </div>
         <div className="kpi-card">
-          <h3>Team SLA</h3>
+          <h3>Team SLA %</h3>
           <p>{teamTotals.sla}%</p>
         </div>
       </section>
@@ -284,37 +272,6 @@ function App() {
             <Bar dataKey="total_first_responses" />
           </BarChart>
         </ResponsiveContainer>
-      </section>
-
-      <section>
-        <h2>SLA Breach Heatmap</h2>
-        <table className="heatmap">
-          <thead>
-            <tr>
-              <th>Employee</th>
-              <th>Responses</th>
-              <th>Breaches</th>
-              <th>SLA</th>
-            </tr>
-          </thead>
-          <tbody>
-            {byEmployee.map(e => (
-              <tr
-                key={e.employee_email}
-                className={
-                  e.sla_percent !== "—" && e.sla_percent < 80
-                    ? "bad"
-                    : ""
-                }
-              >
-                <td>{e.name}</td>
-                <td>{e.total_first_responses}</td>
-                <td>{e.sla_breaches}</td>
-                <td>{e.sla_percent}%</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
       </section>
     </div>
   );
