@@ -6,102 +6,95 @@ import {
   XAxis,
   YAxis,
   Tooltip,
-  ResponsiveContainer
+  ResponsiveContainer,
+  Legend
 } from "recharts";
-import "./App.css";
 
 function minutesSince(ts) {
-  return Math.round(
-    (Date.now() - new Date(ts).getTime()) / 60000
-  );
+  return Math.round((Date.now() - new Date(ts)) / 60000);
 }
 
-function App() {
-  const [rows, setRows] = useState([]);
-  const [days, setDays] = useState(7);
-  const [loading, setLoading] = useState(true);
+export default function App() {
+  const [days, setDays] = useState(30);
+  const [emails, setEmails] = useState([]);
+  const [metrics, setMetrics] = useState([]);
+  const [employees, setEmployees] = useState([]);
 
+  /* -------------------------------------------
+     LIVE EMAILS
+  -------------------------------------------- */
   useEffect(() => {
-    async function load() {
-      setLoading(true);
+    const since = new Date();
+    since.setDate(since.getDate() - days);
 
-      const since = new Date();
-      since.setDate(since.getDate() - days);
+    supabase
+      .from("tracked_emails")
+      .select("*")
+      .gte("received_at", since.toISOString())
+      .eq("has_response", false)
+      .order("received_at", { ascending: false })
+      .then(({ data }) => setEmails(data || []));
 
-      const { data } = await supabase
-        .from("tracked_emails")
-        .select(`
-          id,
-          subject,
-          client_email,
-          employee_email,
-          received_at,
-          scenario,
-          has_response
-        `)
-        .gte("received_at", since.toISOString())
-        .order("received_at", { ascending: false });
+    const channel = supabase
+      .channel("tracked_emails_live")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "tracked_emails" },
+        payload => {
+          setEmails(prev => {
+            const filtered = prev.filter(e => e.id !== payload.new.id);
+            return [payload.new, ...filtered];
+          });
+        }
+      )
+      .subscribe();
 
-      setRows(data || []);
-      setLoading(false);
-    }
-
-    load();
+    return () => supabase.removeChannel(channel);
   }, [days]);
 
-  const unanswered = rows.filter(r => !r.has_response);
+  /* -------------------------------------------
+     AGGREGATES
+  -------------------------------------------- */
+  useEffect(() => {
+    supabase
+      .from("daily_first_responder_metrics")
+      .select("*")
+      .gte("date", new Date(Date.now() - days * 86400000).toISOString())
+      .then(({ data }) => setMetrics(data || []));
 
-  const teamKPIs = useMemo(() => {
-    const total = rows.length;
-    const responded = rows.filter(r => r.has_response).length;
+    supabase
+      .from("employees")
+      .select("email, name")
+      .then(({ data }) => setEmployees(data || []));
+  }, [days]);
 
-    const times = rows
-      .filter(r => r.has_response && r.responded_at)
-      .map(r =>
-        Math.round(
-          (new Date(r.responded_at) -
-            new Date(r.received_at)) /
-            60000
-        )
-      );
-
-    const avg =
-      times.length > 0
-        ? Math.round(
-            times.reduce((a, b) => a + b, 0) /
-              times.length
-          )
-        : 0;
-
-    const breaches = times.filter(t => t > 15).length;
+  /* -------------------------------------------
+     KPIs
+  -------------------------------------------- */
+  const teamTotals = useMemo(() => {
+    const total = metrics.reduce((s, r) => s + r.total_first_responses, 0);
+    const breaches = metrics.reduce((s, r) => s + r.sla_breaches, 0);
 
     return {
       total,
-      avg,
-      sla:
+      avg:
         total > 0
           ? Math.round(
-              ((total - breaches) / total) * 100
+              metrics.reduce(
+                (s, r) =>
+                  s +
+                  r.avg_first_response_minutes * r.total_first_responses,
+                0
+              ) / total
             )
-          : 0
+          : 0,
+      sla: total > 0 ? Math.round(((total - breaches) / total) * 100) : 0
     };
-  }, [rows]);
+  }, [metrics]);
 
-  const byEmployee = useMemo(() => {
-    const map = {};
-    rows.forEach(r => {
-      if (!r.employee_email) return;
-      map[r.employee_email] =
-        (map[r.employee_email] || 0) + 1;
-    });
-    return Object.entries(map).map(([k, v]) => ({
-      name: k,
-      total: v
-    }));
-  }, [rows]);
-
-  if (loading) return <p>Loading…</p>;
-
+  /* -------------------------------------------
+     RENDER
+  -------------------------------------------- */
   return (
     <div className="container">
       <h1>Solvit Email Response Dashboard</h1>
@@ -111,14 +104,9 @@ function App() {
 
         <label>
           Show last&nbsp;
-          <select
-            value={days}
-            onChange={e => setDays(Number(e.target.value))}
-          >
-            {[1, 7, 14, 30, 60].map(d => (
-              <option key={d} value={d}>
-                {d} days
-              </option>
+          <select value={days} onChange={e => setDays(Number(e.target.value))}>
+            {[7, 14, 30, 60].map(d => (
+              <option key={d} value={d}>{d} days</option>
             ))}
           </select>
         </label>
@@ -135,14 +123,12 @@ function App() {
             </tr>
           </thead>
           <tbody>
-            {unanswered.map(e => (
+            {emails.map(e => (
               <tr key={e.id}>
-                <td>
-                  {new Date(e.received_at).toLocaleString()}
-                </td>
+                <td>{new Date(e.received_at).toLocaleString()}</td>
                 <td>{e.client_email}</td>
-                <td>{e.subject || "(No subject)"}</td>
-                <td>{e.employee_email || "Team"}</td>
+                <td>{e.subject || "(no subject)"}</td>
+                <td>{e.employee_email}</td>
                 <td>{minutesSince(e.received_at)}</td>
                 <td>{e.scenario}</td>
               </tr>
@@ -152,33 +138,23 @@ function App() {
       </section>
 
       <section className="kpis">
-        <div>
-          <h3>Total Emails</h3>
-          <p>{teamKPIs.total}</p>
-        </div>
-        <div>
-          <h3>Avg Response</h3>
-          <p>{teamKPIs.avg} min</p>
-        </div>
-        <div>
-          <h3>SLA %</h3>
-          <p>{teamKPIs.sla}%</p>
-        </div>
+        <div>Total Emails<br />{teamTotals.total}</div>
+        <div>Avg Response<br />{teamTotals.avg} min</div>
+        <div>SLA %<br />{teamTotals.sla}%</div>
       </section>
 
       <section>
         <h2>Team Load Distribution</h2>
         <ResponsiveContainer width="100%" height={300}>
-          <BarChart data={byEmployee}>
-            <XAxis dataKey="name" />
+          <BarChart data={metrics}>
+            <XAxis dataKey="employee_email" />
             <YAxis />
             <Tooltip />
-            <Bar dataKey="total" />
+            <Legend />
+            <Bar dataKey="total_first_responses" />
           </BarChart>
         </ResponsiveContainer>
       </section>
     </div>
   );
 }
-
-export default App;
